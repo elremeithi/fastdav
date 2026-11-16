@@ -1,0 +1,17 @@
+services:
+  fastdav:
+    build: .
+    image: fastdav:latest
+    container_name: fastdav
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      DAV_USER: admin
+      DAV_PASSWORD: change-me-please
+      PUID: "99"
+      PGID: "100"
+      UMASK: "000"
+    volumes:
+      - /mnt/user/appdata/fastdav:/config
+      - /mnt/user:/data
