@@ -66,7 +66,7 @@ Earlier plain-HTTP measurements:
 ### Option A – publish the image with GitHub (recommended)
 1. Push this folder to a GitHub repo. The included workflow (`.github/workflows/docker.yml`) builds `ghcr.io/elremeithi/fastdav:latest` for amd64 + arm64.
 2. Make the package public (GitHub → Packages → fastdav → settings).
-3. Copy `unraid/fastdav.xml` to `/boot/config/plugins/dockerMan/templates-user/my-FastDAV.xml` on the Unraid flash drive, replace `elremeithi`.
+3. Copy `unraid/fastdav.xml` to `/boot/config/plugins/dockerMan/templates-user/my-FastDAV.xml` on the Unraid flash drive.
 4. Docker tab → **Add Container** → pick *FastDAV* from the template list → set the admin password → **Apply**.
 
 ### Option B – build directly on Unraid
