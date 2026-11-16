@@ -1,16 +1,16 @@
 <?xml version="1.0"?>
 <Container version="2">
   <Name>FastDAV</Name>
-  <Repository>ghcr.io/YOUR_GITHUB_USER/fastdav:latest</Repository>
-  <Registry>https://github.com/YOUR_GITHUB_USER/fastdav/pkgs/container/fastdav</Registry>
+  <Repository>ghcr.io/elremeithi/fastdav:latest</Repository>
+  <Registry>https://github.com/elremeithi/fastdav/pkgs/container/fastdav</Registry>
   <Network>bridge</Network>
   <Privileged>false</Privileged>
-  <Support>https://github.com/YOUR_GITHUB_USER/fastdav/issues</Support>
-  <Project>https://github.com/YOUR_GITHUB_USER/fastdav</Project>
+  <Support>https://github.com/elremeithi/fastdav/issues</Support>
+  <Project>https://github.com/elremeithi/fastdav</Project>
   <Overview>FastDAV - a fast, lightweight, fully compliant WebDAV server (RFC 4918 class 1 + 2, RFC 4331 quotas) with per-device app passwords. Works with Windows Explorer, macOS Finder, Linux, iOS/Android file managers, rclone, Joplin, Obsidian, Zotero, KeePass and more. Encrypted by default (TLS 1.3, hardware AES-GCM / ChaCha20) with an auto-generated certificate. Manage users and app passwords at https://[IP]:[PORT]/.fastdav/</Overview>
   <Category>Network:Other Cloud: Tools:</Category>
   <WebUI>https://[IP]:[PORT:8443]/.fastdav/</WebUI>
-  <Icon>https://raw.githubusercontent.com/YOUR_GITHUB_USER/fastdav/main/unraid/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/elremeithi/fastdav/main/unraid/icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
   <Config Name="HTTPS Port" Target="8443" Default="8443" Mode="tcp" Description="Encrypted WebDAV + account page." Type="Port" Display="always" Required="true" Mask="false">8443</Config>
   <Config Name="Certificate hostnames" Target="TLS_HOSTS" Default="tower.local,192.168.1.10" Mode="" Description="Comma-separated hostnames/IPs you connect with (your Unraid name and LAN IP, plus any DNS name). Put into the auto-generated certificate." Type="Variable" Display="always" Required="false" Mask="false">tower.local,192.168.1.10</Config>

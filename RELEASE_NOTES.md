@@ -11,6 +11,6 @@ First release of FastDAV, a high-speed WebDAV server for Unraid Docker with per-
 - Unraid-ready: PUID/PGID/UMASK, a ~10 MB `scratch` image, a health check and an Unraid template.
 
 ### Install
-- **Docker image:** `ghcr.io/<owner>/fastdav:1.0.0` (amd64 + arm64)
+- **Docker image:** `ghcr.io/elremeithi/fastdav:1.0.0` (amd64 + arm64)
 - **Unraid:** use the attached `fastdav.xml` template
 - **Binaries:** `fastdav_v1.0.0_linux_amd64.tar.gz` and `fastdav_v1.0.0_linux_arm64.tar.gz` (static, no dependencies)
