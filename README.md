@@ -150,3 +150,7 @@ Changes made by the CLI are picked up by the running server within a second; rev
 - Shared locks (`<D:shared/>`) return 501; exclusive write locks are fully supported.
 - Locks are held in memory and are dropped on restart (clients simply re-lock).
 - Dead properties need a filesystem with user xattrs (XFS, btrfs, ext4, ZFS and Unraid's `/mnt/user` support them). Without xattrs, PROPPATCH still succeeds but the properties are not kept.
+
+## Releasing
+
+Bump `VERSION`, update `RELEASE_NOTES.md`, push to `main`. The `release` workflow creates the `vX.Y.Z` tag, the GitHub Release (binaries for amd64/arm64, Unraid template, checksums) and pushes `ghcr.io/elremeithi/fastdav:X.Y.Z` + `latest`.
