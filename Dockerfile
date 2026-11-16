@@ -11,9 +11,9 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
 FROM scratch
 COPY --from=build /out/fastdav /usr/local/bin/fastdav
 ENV PATH=/usr/local/bin \
-    LISTEN=:8080 DATA_DIR=/data CONFIG_DIR=/config \
+    LISTEN=:8443 TLS=auto DATA_DIR=/data CONFIG_DIR=/config \
     PUID=99 PGID=100 UMASK=000
-EXPOSE 8080
+EXPOSE 8443
 VOLUME ["/config"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s CMD ["fastdav", "healthcheck"]
 ENTRYPOINT ["fastdav"]

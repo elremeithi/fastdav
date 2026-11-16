@@ -107,9 +107,6 @@ func (f *davFile) Readdir(n int) ([]os.FileInfo, error) {
 
 var bufPool = sync.Pool{New: func() any { b := make([]byte, 1<<20); return &b }}
 
-type onlyWriter struct{ io.Writer }
-type onlyReader struct{ io.Reader }
-
 // ReadFrom is used by PUT (io.Copy(file, body)) and COPY.
 func (f *davFile) ReadFrom(r io.Reader) (int64, error) {
 	if src, ok := r.(*davFile); ok {
@@ -118,9 +115,28 @@ func (f *davFile) ReadFrom(r io.Reader) (int64, error) {
 	if src, ok := r.(*os.File); ok {
 		return f.File.ReadFrom(src)
 	}
+	// Fill the whole 1 MiB buffer before each write: TLS (and HTTP/2) bodies
+	// arrive in ≤16 KiB pieces, and one large write is far cheaper than 64 small ones.
 	bp := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bp)
-	return io.CopyBuffer(onlyWriter{f.File}, onlyReader{r}, *bp)
+	buf := *bp
+	var total int64
+	for {
+		n, rerr := io.ReadFull(r, buf)
+		if n > 0 {
+			w, werr := f.File.Write(buf[:n])
+			total += int64(w)
+			if werr != nil {
+				return total, werr
+			}
+		}
+		if rerr == io.EOF || rerr == io.ErrUnexpectedEOF {
+			return total, nil
+		}
+		if rerr != nil {
+			return total, rerr
+		}
+	}
 }
 
 func (f *davFile) WriteTo(w io.Writer) (int64, error) {

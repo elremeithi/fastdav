@@ -31,8 +31,12 @@ type Options struct {
 	DataDir     string
 	ConfigDir   string
 	Prefix      string
+	TLS         string // "auto" (default) or "off"
 	TLSCert     string
 	TLSKey      string
+	TLSHosts    []string
+	HTTPListen  string // optional extra plain-HTTP listener (reverse proxy / LAN)
+	HTTP2       bool
 	ReadOnly    bool
 	DeadProps   bool
 	Quota       bool
@@ -65,7 +69,10 @@ func envBool(k string, def bool) bool {
 
 func loadOptions() Options {
 	o := Options{
-		Listen:     env("LISTEN", ":8080"),
+		Listen:     env("LISTEN", ":8443"),
+		TLS:        strings.ToLower(env("TLS", "auto")),
+		HTTPListen: env("HTTP_LISTEN", ""),
+		HTTP2:      envBool("HTTP2", false),
 		DataDir:    env("DATA_DIR", "/data"),
 		ConfigDir:  env("CONFIG_DIR", "/config"),
 		Prefix:     strings.TrimRight(env("URL_PREFIX", ""), "/"),
@@ -81,6 +88,16 @@ func loadOptions() Options {
 		DirListing: envBool("DIR_LISTING", true),
 	}
 	o.MaxFails, _ = strconv.Atoi(env("MAX_LOGIN_FAILURES", "10"))
+	if o.TLS != "off" && o.TLS != "false" && o.TLS != "0" && o.TLS != "no" {
+		o.TLS = "auto"
+	} else {
+		o.TLS = "off"
+	}
+	for _, h := range strings.Split(env("TLS_HOSTS", ""), ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			o.TLSHosts = append(o.TLSHosts, h)
+		}
+	}
 	if c := env("CORS_ORIGINS", ""); c != "" {
 		for _, s := range strings.Split(c, ",") {
 			if s = strings.TrimSpace(s); s != "" {
@@ -117,6 +134,7 @@ type Server struct {
 	handlers sync.Map // root -> *webdav.Handler
 	lim      *limiter
 	ui       http.Handler
+	tls      *tlsManager
 }
 
 func serve() {
@@ -145,16 +163,40 @@ func serve() {
 	s := &Server{opt: o, store: st, locks: webdav.NewMemLS(), lim: newLimiter(o.MaxFails, 5*time.Minute, 15*time.Minute)}
 	s.ui = newUI(s)
 
-	srv := &http.Server{
-		Addr:              o.Listen,
-		Handler:           s,
-		ReadHeaderTimeout: 30 * time.Second,
-		IdleTimeout:       5 * time.Minute,
-		MaxHeaderBytes:    1 << 20,
-		ErrorLog:          log.New(os.Stderr, "http: ", log.LstdFlags),
+	if tlsEnabled(o) {
+		if s.tls, err = newTLSManager(o); err != nil {
+			log.Fatalf("tls: %v", err)
+		}
 	}
-	if o.TLSCert != "" {
-		srv.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+
+	newSrv := func(addr string, tc *tls.Config) *http.Server {
+		srv := &http.Server{
+			Addr:              addr,
+			Handler:           s,
+			TLSConfig:         tc,
+			ReadHeaderTimeout: 30 * time.Second,
+			IdleTimeout:       5 * time.Minute,
+			MaxHeaderBytes:    1 << 20,
+			ErrorLog:          log.New(os.Stderr, "http: ", log.LstdFlags),
+			// Big flow-control windows: the HTTP/2 default (1 MB) caps a
+			// single upload at ~1 MB per round trip (≈ 40 Mbit/s at 200 ms RTT).
+			HTTP2: &http.HTTP2Config{
+				MaxConcurrentStreams:          250,
+				MaxReadFrameSize:              1 << 20,
+				MaxReceiveBufferPerConnection: 64 << 20,
+				MaxReceiveBufferPerStream:     32 << 20,
+			},
+		}
+		return srv
+	}
+	var servers []*http.Server
+	var tc *tls.Config
+	if s.tls != nil {
+		tc = s.tls.config()
+	}
+	servers = append(servers, newSrv(o.Listen, tc))
+	if o.HTTPListen != "" {
+		servers = append(servers, newSrv(o.HTTPListen, nil))
 	}
 
 	go func() { // periodic housekeeping
@@ -164,23 +206,39 @@ func serve() {
 		}
 	}()
 
-	ln, err := net.Listen("tcp", o.Listen)
-	if err != nil {
-		log.Fatalf("listen: %v", err)
+	for _, srv := range servers {
+		ln, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			log.Fatalf("listen: %v", err)
+		}
+		scheme := "http"
+		if srv.TLSConfig != nil {
+			scheme = "https"
+			if o.HTTP2 {
+				http2Enable(srv)
+			} else {
+				// HTTP/1.1 only: for large WebDAV transfers it is 2-3x faster
+				// than Go's HTTP/2 (no framing/flow-control overhead), and
+				// Windows/macOS WebDAV clients use HTTP/1.1 anyway.
+				srv.TLSConfig.NextProtos = []string{"http/1.1"}
+				srv.TLSNextProto = map[string]func(*http.Server, *tls.Conn, http.Handler){}
+			}
+			ln = tls.NewListener(ln, srv.TLSConfig)
+		}
+		log.Printf("FastDAV %s listening on %s://%s (data=%s prefix=%q uid=%d)", version, scheme, srv.Addr, o.DataDir, o.Prefix, os.Getuid())
+		go func() {
+			if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Fatalf("serve: %v", err)
+			}
+		}()
 	}
-	log.Printf("FastDAV %s listening on %s (data=%s prefix=%q tls=%v uid=%d)", version, o.Listen, o.DataDir, o.Prefix, o.TLSCert != "", os.Getuid())
-
-	go func() {
-		var err error
-		if o.TLSCert != "" {
-			err = srv.ServeTLS(ln, o.TLSCert, o.TLSKey)
-		} else {
-			err = srv.Serve(ln)
+	if s.tls != nil {
+		hw := "no AES hardware: ChaCha20-Poly1305 preferred"
+		if hasAESHardware() {
+			hw = "AES hardware detected: AES-128-GCM preferred"
 		}
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("serve: %v", err)
-		}
-	}()
+		log.Printf("tls: %s certificate, TLS 1.2/1.3, %s", s.tls.mode, hw)
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -188,7 +246,9 @@ func serve() {
 	log.Printf("shutting down")
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	_ = srv.Shutdown(ctx)
+	for _, srv := range servers {
+		_ = srv.Shutdown(ctx)
+	}
 	st.FlushUsage()
 }
 
@@ -467,4 +527,13 @@ func badNamespaces(b []byte) bool {
 			}
 		}
 	}
+}
+
+// http2Enable makes srv.Serve(tlsListener) speak HTTP/2: net/http only
+// auto-configures h2 in ServeTLS/ListenAndServeTLS, so declare the protocols.
+func http2Enable(srv *http.Server) {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	srv.Protocols = &p
 }

@@ -5,13 +5,14 @@ services:
     container_name: fastdav
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "8443:8443"
     environment:
       DAV_USER: admin
       DAV_PASSWORD: change-me-please
       PUID: "99"
       PGID: "100"
       UMASK: "000"
+      TLS_HOSTS: tower.local,192.168.1.10   # your Unraid hostname + LAN IP
     volumes:
       - /mnt/user/appdata/fastdav:/config
       - /mnt/user:/data

@@ -76,6 +76,19 @@ func (u *uiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 
+	// The CA certificate is public; serve it without login so devices can
+	// install it before they have credentials configured.
+	if strings.TrimPrefix(r.URL.Path, s.opt.Prefix+uiPath) == "ca.crt" {
+		if s.tls == nil || len(s.tls.caPEM) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+		w.Header().Set("Content-Disposition", `attachment; filename="fastdav-ca.crt"`)
+		_, _ = w.Write(s.tls.caPEM)
+		return
+	}
+
 	pr := s.authenticate(w, r)
 	if pr == nil {
 		return
@@ -113,7 +126,11 @@ func (u *uiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			jerr(w, 404, errors.New("user not found"))
 			return
 		}
-		writeJSON(w, 200, toAPIUser(cu))
+		out := map[string]any{"user": toAPIUser(cu), "tls": nil, "conn": connInfo(r)}
+		if s.tls != nil {
+			out["tls"] = s.tls.Info()
+		}
+		writeJSON(w, 200, out)
 
 	case api == "apppasswords" && r.Method == http.MethodPost:
 		var in struct {
@@ -222,5 +239,18 @@ func (u *uiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		jerr(w, 404, errors.New("not found"))
+	}
+}
+
+func connInfo(r *http.Request) map[string]any {
+	if r.TLS == nil {
+		return map[string]any{"encrypted": false, "proto": r.Proto}
+	}
+	return map[string]any{
+		"encrypted": true,
+		"proto":     r.Proto,
+		"version":   tlsVersionName(r.TLS.Version),
+		"cipher":    tls.CipherSuiteName(r.TLS.CipherSuite),
+		"resumed":   r.TLS.DidResume,
 	}
 }

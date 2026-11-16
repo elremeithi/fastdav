@@ -62,7 +62,7 @@ func runCLI(args []string) int {
 			addr = "127.0.0.1" + addr
 		}
 		scheme := "http"
-		if o.TLSCert != "" {
+		if tlsEnabled(o) {
 			scheme = "https"
 		}
 		c := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{TLSClientConfig: insecureTLS()}}
