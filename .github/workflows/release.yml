@@ -1,0 +1,32 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags="-s -w -X main.version=${GITHUB_REF_NAME#v}" -o fastdav .
+            tar czf dist/fastdav_${GITHUB_REF_NAME}_linux_${arch}.tar.gz fastdav README.md
+          done
+          cp unraid/fastdav.xml dist/
+          (cd dist && sha256sum * > SHA256SUMS)
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=RELEASE_NOTES.md
+          [ -f "$notes" ] || { echo "Release $GITHUB_REF_NAME" > /tmp/n.md; notes=/tmp/n.md; }
+          gh release create "$GITHUB_REF_NAME" dist/* --title "FastDAV $GITHUB_REF_NAME" --notes-file "$notes" \
+            || gh release upload "$GITHUB_REF_NAME" dist/* --clobber
