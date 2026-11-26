@@ -1,16 +1,18 @@
-## FastDAV v1.0.0
+## FastDAV v1.1.0
 
-First release of FastDAV, a high-speed WebDAV server for Unraid Docker with per-device app passwords.
+### Sign-in page instead of the browser popup
+- The account page at `/.fastdav/` now has its own **sign-in page**. Browsers no longer show the Basic-auth popup.
+- Optional **"Keep me signed in for 30 days"**, and a **Sign out** button.
+- Opening the server address (or any folder) in a browser sends you to the sign-in page, then back to that folder.
+- Sessions use an `HttpOnly`, `SameSite=Strict` cookie, marked `Secure` over HTTPS.
+- Changing your password signs out your other browsers. Sign-in attempts count toward the same per-IP lockout as WebDAV logins.
+- App passwords are refused on the sign-in page: they only work for WebDAV clients.
+- A browser session can only **read** files (browse and download). Uploads and changes still need a WebDAV client.
 
-### Highlights
-- WebDAV class 1 + 2 (RFC 4918) with persistent custom properties and RFC 4331 quotas. Litmus: basic, copymove, props and http 100%; locks 33/34 (shared locks not supported, exclusive locks are).
-- **App passwords:** per device, revocable, optional read-only, folder scope and expiry, last-used tracking, and an "app passwords only" mode per user.
-- **Encrypted by default:** TLS 1.3, hardware AES-128-GCM or ChaCha20-Poly1305, ECDSA certificates, an auto-generated local CA with automatic renewal, and hot-reload for your own certificates.
-- **Fast:** ~1.2 GB/s encrypted and ~1.9 GB/s plain downloads in testing, kernel copies for server-side COPY, batched upload writes.
-- Web UI at `/.fastdav/` for app passwords, users and certificate download, plus a full CLI.
-- Unraid-ready: PUID/PGID/UMASK, a ~10 MB `scratch` image, a health check and an Unraid template.
+### Unchanged
+WebDAV clients (Windows Explorer, macOS Finder, rclone, mobile apps) still sign in with Basic auth and app passwords exactly as before.
 
 ### Install
-- **Docker image:** `ghcr.io/elremeithi/fastdav:1.0.0` (amd64 + arm64)
-- **Unraid:** use the attached `fastdav.xml` template
-- **Binaries:** `fastdav_v1.0.0_linux_amd64.tar.gz` and `fastdav_v1.0.0_linux_arm64.tar.gz` (static, no dependencies)
+- **Docker image:** `ghcr.io/elremeithi/fastdav:1.1.0` (amd64 + arm64)
+- **Unraid:** use the attached `fastdav.xml` template, or press *Check for Updates* on the Docker tab
+- **Binaries:** `fastdav_v1.1.0_linux_amd64.tar.gz` and `fastdav_v1.1.0_linux_arm64.tar.gz`

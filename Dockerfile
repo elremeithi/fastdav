@@ -4,7 +4,7 @@ ARG TARGETOS TARGETARCH VERSION=1.0.0
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY *.go ui.html ./
+COPY *.go *.html ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/fastdav .
 

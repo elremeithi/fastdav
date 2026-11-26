@@ -11,6 +11,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -135,6 +136,7 @@ type Server struct {
 	lim      *limiter
 	ui       http.Handler
 	tls      *tlsManager
+	sessions *sessionStore
 }
 
 func serve() {
@@ -161,6 +163,7 @@ func serve() {
 	}
 
 	s := &Server{opt: o, store: st, locks: webdav.NewMemLS(), lim: newLimiter(o.MaxFails, 5*time.Minute, 15*time.Minute)}
+	s.sessions = newSessionStore()
 	s.ui = newUI(s)
 
 	if tlsEnabled(o) {
@@ -203,6 +206,7 @@ func serve() {
 		t := time.NewTicker(time.Minute)
 		for range t.C {
 			st.FlushUsage()
+			s.sessions.prune()
 		}
 	}()
 
@@ -411,7 +415,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pr := s.authenticate(w, r)
+	// Browsers: use the sign-in page and its session cookie (read-only
+	// browsing) instead of the Basic-auth popup.
+	var pr *Principal
+	if r.Header.Get("Authorization") == "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if sp := s.sessionPrincipal(r); sp != nil {
+			if sp.AppOnly {
+				http.Error(w, "this account requires an app password for WebDAV access", http.StatusForbidden)
+				return
+			}
+			pr = sp
+		} else if s.opt.UI && isBrowser(r) {
+			http.Redirect(w, r, s.opt.Prefix+uiPath+"login?next="+url.QueryEscape(r.URL.Path), http.StatusSeeOther)
+			return
+		}
+	}
+	if pr == nil {
+		pr = s.authenticate(w, r)
+	}
 	if pr == nil {
 		return
 	}

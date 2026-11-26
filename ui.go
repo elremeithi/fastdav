@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -15,6 +16,52 @@ const uiPath = "/.fastdav/"
 
 //go:embed ui.html
 var uiHTML []byte
+
+//go:embed login.html
+var loginHTML []byte
+
+func servePage(w http.ResponseWriter, page []byte) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+	_, _ = w.Write(page)
+}
+
+func (u *uiServer) login(w http.ResponseWriter, r *http.Request) {
+	s := u.s
+	var in struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Remember bool   `json:"remember"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil {
+		jerr(w, 400, errors.New("bad request"))
+		return
+	}
+	ip := s.clientIP(r)
+	if s.lim.Blocked(ip) {
+		w.Header().Set("Retry-After", "900")
+		jerr(w, http.StatusTooManyRequests, errors.New("Too many failed sign-in attempts. Try again in 15 minutes."))
+		return
+	}
+	p := s.store.Authenticate(strings.TrimSpace(in.Username), in.Password)
+	if p == nil {
+		s.lim.Fail(ip)
+		log.Printf("auth: failed web sign-in for %q from %s", in.Username, ip)
+		jerr(w, http.StatusUnauthorized, errors.New("Incorrect username or password."))
+		return
+	}
+	if p.AppID != "" {
+		jerr(w, http.StatusForbidden, errors.New("App passwords can't be used here. Sign in with your account password."))
+		return
+	}
+	if s.opt.MaxFails > 0 {
+		s.lim.Success(ip)
+	}
+	s.setSessionCookie(w, r, p.User, in.Remember)
+	writeJSON(w, 200, map[string]string{"next": s.safeNext(r.URL.Query().Get("next"))})
+}
 
 func insecureTLS() *tls.Config { return &tls.Config{InsecureSkipVerify: true} } // healthcheck on localhost only
 
@@ -89,33 +136,59 @@ func (u *uiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pr := s.authenticate(w, r)
-	if pr == nil {
-		return
-	}
-	if pr.AppID != "" {
-		http.Error(w, "app passwords cannot be used for account management; sign in with your main password", http.StatusForbidden)
-		return
-	}
 	rel := strings.TrimPrefix(r.URL.Path, s.opt.Prefix+uiPath)
-
-	if rel == "" || rel == "index.html" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' data:")
-		_, _ = w.Write(uiHTML)
-		return
-	}
-	if !strings.HasPrefix(rel, "api/") {
+	isPage := rel == "" || rel == "index.html"
+	isAPI := strings.HasPrefix(rel, "api/")
+	if !isPage && !isAPI && rel != "login" {
 		http.NotFound(w, r)
 		return
 	}
-	// CSRF guard: browsers can't attach custom headers cross-origin without a CORS preflight.
-	if r.Method != http.MethodGet && r.Header.Get("X-FastDAV") != "1" {
+	// CSRF guard: browsers can't attach custom headers cross-origin without a
+	// CORS preflight; the session cookie is also SameSite=Strict.
+	if isAPI && r.Method != http.MethodGet && r.Header.Get("X-FastDAV") != "1" {
 		jerr(w, http.StatusForbidden, errors.New("missing X-FastDAV header"))
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	if isAPI {
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	}
+
+	switch {
+	case rel == "login" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+		if s.sessionPrincipal(r) != nil {
+			http.Redirect(w, r, s.safeNext(r.URL.Query().Get("next")), http.StatusSeeOther)
+			return
+		}
+		servePage(w, loginHTML)
+		return
+	case rel == "api/login" && r.Method == http.MethodPost:
+		u.login(w, r)
+		return
+	case rel == "api/logout" && r.Method == http.MethodPost:
+		s.clearSessionCookie(w, r)
+		writeJSON(w, 200, map[string]bool{"ok": true})
+		return
+	}
+
+	// Signed in via session cookie; Basic auth is still accepted for scripts,
+	// but never challenged, so browsers don't show a popup.
+	pr := s.sessionPrincipal(r)
+	if pr == nil {
+		pr = s.basicPrincipal(r)
+	}
+	if pr == nil || pr.AppID != "" {
+		if isPage {
+			http.Redirect(w, r, s.opt.Prefix+uiPath+"login", http.StatusSeeOther)
+		} else {
+			jerr(w, http.StatusUnauthorized, errors.New("not signed in"))
+		}
+		return
+	}
+
+	if isPage {
+		servePage(w, uiHTML)
+		return
+	}
 	api := strings.TrimPrefix(rel, "api/")
 	st := s.store
 
@@ -181,6 +254,10 @@ func (u *uiServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			jerr(w, 400, err)
 			return
 		}
+		// Old sessions die with the old password hash; keep this browser signed in.
+		remember := s.sessionIsLong(r)
+		s.clearSessionCookie(w, r)
+		s.setSessionCookie(w, r, pr.User, remember)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 
 	// ---- admin ----

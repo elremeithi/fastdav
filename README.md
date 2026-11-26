@@ -8,7 +8,7 @@ A fast, small (≈10 MB, `FROM scratch`), fully compliant WebDAV server built fo
 - **Windows quirks**: `MS-Author-Via`, unauthenticated `OPTIONS` probe, `Win32LastModifiedTime` PROPPATCH applied to the real mtime
 - **Speed**: `sendfile(2)` for downloads, `copy_file_range` (reflink on btrfs/XFS) for server-side COPY, 1 MiB pooled upload buffers, no content sniffing during listings, bcrypt result cache so only the first request of a session pays for password hashing
 - **App passwords**: one per device/app, revocable, optional **read-only**, optional **folder scope** (token only sees `/Photos`, for example), optional **expiry**, "last used" tracking; per-user **"app passwords only"** mode
-- Multiple users with their own home folders, admin web UI at `/.fastdav/`, CLI for everything
+- Multiple users with their own home folders, admin web UI at `/.fastdav/` with a proper **sign-in page** (no browser popup, optional "keep me signed in"), CLI for everything
 - Brute-force protection (per-IP lockout), CSRF-protected API, privilege drop to `PUID`/`PGID`, `UMASK`
 - **Encrypted by default** — see [Encryption](#encryption-fast-https)
 - Browser directory listing, optional CORS for web clients, URL prefix for reverse proxies
@@ -142,6 +142,7 @@ Changes made by the CLI are picked up by the running server within a second; rev
 
 - All traffic, including passwords, is encrypted with TLS by default.
 - Main passwords are bcrypt (cost 11). App passwords are 25 random characters (~124 bits) and stored as SHA-256 only — shown once at creation.
+- The account page uses its own sign-in page and an `HttpOnly`, `SameSite=Strict` session cookie (`Secure` over HTTPS). Changing a password signs out the user's other browsers. A browser session can only read files; changes need a WebDAV client.
 - App passwords cannot sign in to the account page, so a leaked device token can't create more tokens or change the password.
 - Turn on **App passwords only** for a user to stop the main password from working for WebDAV at all.
 

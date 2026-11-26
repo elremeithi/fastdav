@@ -42,7 +42,7 @@ details summary{cursor:pointer;color:var(--mut);font-size:13px}
 .help{font-size:13px;color:var(--mut)} .help b{color:var(--fg);font-weight:560}
 .hidden{display:none}
 </style></head><body><main>
-<header><h1>FastDAV <small id="who"></small></h1></header>
+<header><h1>FastDAV <small id="who"></small></h1><button type="button" id="logout" onclick="logout()">Sign out</button></header>
 
 <section class="card">
   <h2>Connect</h2>
@@ -124,7 +124,9 @@ details summary{cursor:pointer;color:var(--mut);font-size:13px}
 <script>
 const $=id=>document.getElementById(id);
 const base=location.pathname.replace(/\/\.fastdav\/.*$/,'');
-const api=(p,o={})=>fetch(base+'/.fastdav/api/'+p,{...o,headers:{'Content-Type':'application/json','X-FastDAV':'1'},credentials:'same-origin'}).then(async r=>{const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j});
+const toLogin=()=>location.replace(base+'/.fastdav/login');
+const api=(p,o={})=>fetch(base+'/.fastdav/api/'+p,{...o,headers:{'Content-Type':'application/json','X-FastDAV':'1'},credentials:'same-origin'}).then(async r=>{if(r.status===401){toLogin();throw new Error('Signed out')}const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||r.statusText);return j});
+async function logout(){try{await api('logout',{method:'POST'})}catch(e){}toLogin()}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const when=t=>t?new Date(t).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'never';
 const msg=(id,t,ok)=>{const e=$(id);e.textContent=t;e.className='msg '+(ok?'o':'e');if(ok)setTimeout(()=>e.textContent='',3000)};
@@ -176,7 +178,7 @@ async function createApp(e){
 }
 async function changePw(e){
   e.preventDefault();
-  try{await api('password',{method:'POST',body:JSON.stringify({current:$('pCur').value,new:$('pNew').value})});msg('pwMsg','Password changed. Your browser may ask you to sign in again.',true);e.target.reset()}
+  try{await api('password',{method:'POST',body:JSON.stringify({current:$('pCur').value,new:$('pNew').value})});msg('pwMsg','Password changed. Other signed-in browsers have been signed out.',true);e.target.reset()}
   catch(err){msg('pwMsg',err.message)}
   return false;
 }

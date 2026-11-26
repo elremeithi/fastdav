@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · FastDAV</title>
+<meta name="robots" content="noindex">
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#17191c;--mut:#667085;--ln:#e4e7ec;--ac:#2563eb;--acf:#fff;--dn:#d92d20;--in:#fff;--ring:rgba(37,99,235,.25)}
+@media (prefers-color-scheme:dark){:root{--bg:#0e1013;--card:#16191d;--fg:#e7e9ec;--mut:#98a2b3;--ln:#262a30;--ac:#5b8cff;--acf:#fff;--dn:#f97066;--in:#0e1013;--ring:rgba(91,140,255,.3)}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.wrap{width:100%;max-width:380px}
+.brand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:22px}
+.brand svg{width:36px;height:36px}
+.brand b{font-size:20px;font-weight:650;letter-spacing:-.01em}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:26px 24px 22px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+h1{font-size:17px;font-weight:620;margin:0 0 4px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 18px}
+label{display:block;font-size:12.5px;color:var(--mut);margin:0 0 5px}
+input[type=text],input[type=password]{display:block;width:100%;height:40px;border:1px solid var(--ln);border-radius:9px;padding:0 12px;background:var(--in);color:var(--fg);font:inherit;font-size:15px;margin-bottom:14px}
+input:focus{outline:none;border-color:var(--ac);box-shadow:0 0 0 3px var(--ring)}
+.pw{position:relative}
+.pw input{padding-right:58px}
+.pw button{position:absolute;right:6px;top:6px;height:28px;border:0;background:none;color:var(--mut);font:inherit;font-size:12.5px;cursor:pointer;padding:0 8px;border-radius:6px}
+.pw button:hover{color:var(--fg)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);margin:2px 0 18px;cursor:pointer}
+.chk input{width:16px;height:16px;margin:0;accent-color:var(--ac)}
+.go{width:100%;height:40px;border:0;border-radius:9px;background:var(--ac);color:var(--acf);font:inherit;font-weight:600;font-size:14.5px;cursor:pointer}
+.go:disabled{opacity:.65;cursor:default}
+.err{color:var(--dn);font-size:13px;min-height:20px;margin:-6px 0 8px}
+.foot{text-align:center;color:var(--mut);font-size:12.5px;margin-top:16px;line-height:1.6}
+.foot a{color:var(--ac);text-decoration:none}
+</style></head><body>
+<main class="wrap">
+  <div class="brand" aria-hidden="true">
+    <svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#2563eb"/><path d="M35 10 20 35h10.5L27 54l17-27H33l4.5-17z" fill="#fff"/></svg>
+    <b>FastDAV</b>
+  </div>
+  <form class="card" id="f" novalidate>
+    <h1>Sign in</h1>
+    <p class="sub">Use your account password. App passwords are for WebDAV clients only.</p>
+    <label for="u">Username</label>
+    <input type="text" id="u" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus>
+    <label for="p">Password</label>
+    <div class="pw">
+      <input type="password" id="p" name="password" autocomplete="current-password" required>
+      <button type="button" id="show" aria-label="Show password">Show</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="r"> Keep me signed in for 30 days</label>
+    <div class="err" id="e" role="alert" aria-live="polite"></div>
+    <button class="go" id="b" type="submit">Sign in</button>
+  </form>
+  <p class="foot">Connecting a device? Use the server address in your WebDAV app.<br><a href="ca.crt" id="ca">Download CA certificate</a></p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const next=new URLSearchParams(location.search).get('next')||'';
+$('show').onclick=()=>{const p=$('p'),v=p.type==='password';p.type=v?'text':'password';$('show').textContent=v?'Hide':'Show';p.focus()};
+fetch('ca.crt',{method:'HEAD'}).then(r=>{if(!r.ok)$('ca').remove()}).catch(()=>$('ca').remove());
+$('f').onsubmit=async e=>{
+  e.preventDefault();
+  const u=$('u').value.trim(),p=$('p').value;
+  if(!u||!p){$('e').textContent='Enter your username and password.';(u?$('p'):$('u')).focus();return}
+  $('b').disabled=true;$('b').textContent='Signing in…';$('e').textContent='';
+  try{
+    const r=await fetch('api/login'+(next?'?next='+encodeURIComponent(next):''),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-FastDAV':'1'},body:JSON.stringify({username:u,password:p,remember:$('r').checked})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||'Sign-in failed');
+    location.replace(j.next||'./');
+  }catch(err){
+    $('e').textContent=err.message;$('p').value='';$('p').focus();
+    $('b').disabled=false;$('b').textContent='Sign in';
+  }
+};
+</script></body></html>
